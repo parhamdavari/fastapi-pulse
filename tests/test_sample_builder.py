@@ -199,6 +199,77 @@ def test_resolve_ref_empty():
     assert resolved == {}
 
 
+def test_value_from_schema_prefers_default_over_generated():
+    """_value_from_schema should return the provided default."""
+    builder = SamplePayloadBuilder({})
+    result = builder._value_from_schema({"type": "integer", "default": 99})
+    assert result == 99
+
+
+@pytest.mark.parametrize(
+    "fmt, assertion",
+    [
+        ("date-time", lambda v: v.endswith("Z") and "T" in v),
+        ("date", lambda v: len(v.split("-")) == 3),
+        ("email", lambda v: v == "user@example.com"),
+        ("uuid", lambda v: v == "00000000-0000-0000-0000-000000000000"),
+    ],
+)
+def test_value_from_schema_handles_string_formats(fmt, assertion):
+    """String schemas should respect known formats."""
+    builder = SamplePayloadBuilder({})
+    value = builder._value_from_schema({"type": "string", "format": fmt})
+    assert assertion(value)
+
+
+def test_value_from_schema_handles_numeric_and_boolean_types():
+    """Numeric and boolean schemas should map to sample primitives."""
+    builder = SamplePayloadBuilder({})
+    assert builder._value_from_schema({"type": "integer"}) == 1
+    assert builder._value_from_schema({"type": "number"}) == pytest.approx(1.0)
+    assert builder._value_from_schema({"type": "boolean"}) is True
+
+
+def test_value_from_schema_handles_arrays_and_objects():
+    """Arrays and objects should recurse into nested schemas."""
+    builder = SamplePayloadBuilder({})
+    array_schema = {"type": "array", "items": {"type": "integer"}}
+    object_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "profile": {"type": "object", "properties": {"age": {"type": "integer"}}},
+        },
+    }
+    assert builder._value_from_schema(array_schema) == [1]
+    payload = builder._value_from_schema(object_schema)
+    assert payload["name"] == "sample"
+    assert payload["profile"]["age"] == 1
+
+
+def test_value_from_schema_handles_additional_properties_only():
+    """Objects with only additionalProperties should still produce a dict."""
+    builder = SamplePayloadBuilder({})
+    schema = {"type": "object", "additionalProperties": {"type": "boolean"}}
+    assert builder._value_from_schema(schema)["key"] is True
+
+
+def test_value_from_schema_handles_anyof_and_oneof():
+    """Union-like schemas should evaluate the first option."""
+    builder = SamplePayloadBuilder({})
+    anyof_value = builder._value_from_schema({"anyOf": [{"type": "number"}]})
+    oneof_value = builder._value_from_schema({"oneOf": [{"type": "boolean"}]})
+    assert anyof_value == pytest.approx(1.0)
+    assert oneof_value is True
+
+
+def test_value_from_schema_handles_enum_and_depth_limits():
+    """Ensure enums return the first entry and depth guard works."""
+    builder = SamplePayloadBuilder({})
+    assert builder._value_from_schema({"enum": ["first", "second"]}) == "first"
+    assert builder._value_from_schema({"type": "string"}, depth=9) == "sample"
+
+
 def test_value_from_schema_with_ref():
     """Test _value_from_schema resolves $ref."""
     schema = {

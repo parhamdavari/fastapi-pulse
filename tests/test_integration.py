@@ -30,6 +30,7 @@ def test_app():
     """
     app = FastAPI()
     add_pulse(app)
+    app.state.fastapi_pulse_probe_manager.min_probe_interval = 0
 
     @app.get("/test/success")
     async def success_endpoint():

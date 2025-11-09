@@ -1,8 +1,32 @@
 """Unit tests for probe router endpoints."""
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from urllib.parse import quote
+
+from fastapi_pulse import add_pulse
+
+
+@pytest.fixture(name="client")
+def client_fixture():
+    """Provide a TestClient backed by an app with Pulse enabled."""
+    app = FastAPI()
+
+    @app.get("/items/{item_id}")
+    def read_item(item_id: int):
+        return {"id": item_id, "status": "ok"}
+
+    @app.post("/items")
+    def create_item(payload: dict):
+        return payload
+
+    add_pulse(app)
+    manager = app.state.fastapi_pulse_probe_manager
+    manager.min_probe_interval = 0
+
+    with TestClient(app) as client:
+        yield client
 
 
 def test_probe_start_without_body_returns_job_id(client: TestClient):
@@ -196,3 +220,16 @@ def test_multiple_probe_jobs_with_different_payloads(client: TestClient):
         status2 = client.get(f"/health/pulse/probe/{job2_id}")
         assert status1.status_code == 200
         assert status2.status_code == 200
+
+
+def test_probe_start_returns_500_when_job_id_missing(client: TestClient):
+    """POST /pulse/probe should surface 500 when probe manager fails."""
+    manager = client.app.state.fastapi_pulse_probe_manager
+    original_start = manager.start_probe
+    try:
+        manager.start_probe = lambda targets: None  # type: ignore[assignment]
+        response = client.post("/health/pulse/probe")
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to start probe job"
+    finally:
+        manager.start_probe = original_start

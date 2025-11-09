@@ -163,15 +163,7 @@ class PulseProbeManager:
         job.started_at = time.time()
 
         try:
-            # Add overall job timeout to prevent hanging
-            async with asyncio.timeout(self.job_timeout):
-                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://pulse-probe") as client:
-                    tasks = [
-                        self._probe_endpoint(job, client, endpoint)
-                        for endpoint in endpoints
-                    ]
-                    await asyncio.gather(*tasks, return_exceptions=True)
-
+            await self._run_with_timeout(job, endpoints)
             job.status = "completed"
         except asyncio.TimeoutError:
             job.status = "timeout"
@@ -198,6 +190,28 @@ class PulseProbeManager:
             job.completed_at = time.time()
             if job._future and not job._future.done():
                 job._future.set_result(job)
+
+    async def _run_with_timeout(self, job: ProbeJob, endpoints: List[EndpointInfo]) -> None:
+        """Execute the probe batch while enforcing an overall job timeout."""
+        timeout_ctx = getattr(asyncio, "timeout", None)
+        probe_coro = self._execute_probe_batch(job, endpoints)
+        if timeout_ctx is not None:
+            async with timeout_ctx(self.job_timeout):
+                await probe_coro
+        else:
+            await asyncio.wait_for(probe_coro, timeout=self.job_timeout)
+
+    async def _execute_probe_batch(self, job: ProbeJob, endpoints: List[EndpointInfo]) -> None:
+        """Perform the actual probe calls."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=self.app),
+            base_url="http://pulse-probe",
+        ) as client:
+            tasks = [
+                self._probe_endpoint(job, client, endpoint)
+                for endpoint in endpoints
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _probe_endpoint(
         self,

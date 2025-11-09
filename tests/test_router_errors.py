@@ -17,7 +17,7 @@ def test_get_registry_raises_when_not_initialized():
 
     # Don't initialize pulse - this will cause RuntimeError
     # when trying to access registry
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=False)
 
     # This should raise RuntimeError about registry not initialized
     # The error will be wrapped in HTTP 500
@@ -35,7 +35,7 @@ def test_get_probe_manager_raises_when_not_initialized():
     router = create_pulse_router(metrics)
     app.include_router(router)
 
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=False)
 
     # Probe endpoint should fail without probe manager
     response = client.post("/health/pulse/probe")
@@ -52,7 +52,7 @@ def test_get_payload_store_raises_when_not_initialized():
     router = create_pulse_router(metrics)
     app.include_router(router)
 
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=False)
 
     # Payload endpoints should fail without payload store
     response = client.put("/health/pulse/probe/GET%20%2Ftest/payload", json={})
