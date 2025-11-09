@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+# Security limits to prevent abuse
+MAX_PAYLOAD_SIZE_BYTES = 1024 * 1024  # 1MB per payload
+MAX_TOTAL_STORAGE_BYTES = 10 * 1024 * 1024  # 10MB total storage
+ENDPOINT_ID_PATTERN = re.compile(r'^[A-Z]+ /[a-zA-Z0-9/_\-{}]+$')
 
 
 class PulsePayloadStore:
@@ -40,8 +46,35 @@ class PulsePayloadStore:
         return self._payloads.get(endpoint_id)
 
     def set(self, endpoint_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        # Validate endpoint_id format to prevent path traversal
+        if not ENDPOINT_ID_PATTERN.match(endpoint_id):
+            raise ValueError(
+                f"Invalid endpoint_id format: {endpoint_id}. "
+                f"Expected format: 'METHOD /path' (e.g., 'GET /users/{{id}}')"
+            )
+
+        # Sanitize and validate payload
         cleaned = self._sanitize_payload(payload)
+
+        # Check individual payload size
+        payload_json = json.dumps(cleaned, ensure_ascii=False)
+        payload_size = len(payload_json.encode('utf-8'))
+        if payload_size > MAX_PAYLOAD_SIZE_BYTES:
+            raise ValueError(
+                f"Payload too large: {payload_size} bytes. "
+                f"Maximum allowed: {MAX_PAYLOAD_SIZE_BYTES} bytes ({MAX_PAYLOAD_SIZE_BYTES // 1024}KB)"
+            )
+
         with self._lock:
+            # Check total storage size before adding
+            if self.file_path.exists():
+                current_size = self.file_path.stat().st_size
+                if endpoint_id not in self._payloads and current_size > MAX_TOTAL_STORAGE_BYTES:
+                    raise ValueError(
+                        f"Storage limit exceeded. Current: {current_size} bytes, "
+                        f"Maximum: {MAX_TOTAL_STORAGE_BYTES} bytes ({MAX_TOTAL_STORAGE_BYTES // 1024 // 1024}MB)"
+                    )
+
             self._payloads[endpoint_id] = cleaned
             self._flush()
         return cleaned

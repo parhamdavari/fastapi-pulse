@@ -105,13 +105,14 @@ class RollingWindowDigest:
 
 
 class PulseMetrics:
-    """Thread-safe performance metrics collector."""
+    """Thread-safe performance metrics collector with bounded memory."""
 
     def __init__(
         self,
         max_samples: int = 1000,
         window_seconds: int = 300,
         bucket_seconds: int = 60,
+        max_endpoints: int = 1000,
     ):
         # max_samples is kept for backwards compatibility but superseded by the
         # rolling window configuration.
@@ -120,6 +121,7 @@ class PulseMetrics:
 
         self.window_seconds = window_seconds
         self.bucket_seconds = bucket_seconds
+        self.max_endpoints = max_endpoints
 
         self._latency_trackers = defaultdict(
             lambda: RollingWindowDigest(
@@ -137,6 +139,9 @@ class PulseMetrics:
         self.error_counts = defaultdict(int)
         self.status_codes = defaultdict(lambda: defaultdict(int))
 
+        # LRU tracking for eviction
+        self._endpoint_access_times: Dict[str, float] = {}
+
         # Business metrics
         self.endpoint_metrics = defaultdict(
             lambda: {
@@ -149,38 +154,51 @@ class PulseMetrics:
                 "window_seconds": self.window_seconds,
             }
         )
-    def record_request(self, 
-                      endpoint: str, 
-                      method: str, 
-                      status_code: int, 
+    def record_request(self,
+                      endpoint: str,
+                      method: str,
+                      status_code: int,
                       duration_ms: float,
                       correlation_id: str = None):
         """Record a request's performance metrics."""
         with self._lock:
             key = f"{method} {endpoint}"
-            
+
+            # Enforce max endpoints with LRU eviction
+            if key not in self.request_counts:
+                if len(self.request_counts) >= self.max_endpoints:
+                    # Evict least recently used endpoint
+                    oldest_key = min(
+                        self._endpoint_access_times.items(),
+                        key=lambda x: x[1]
+                    )[0]
+                    self._evict_endpoint(oldest_key)
+
+            # Update access time for LRU
+            self._endpoint_access_times[key] = time.time()
+
             # Basic counters
             self.request_counts[key] += 1
             self.status_codes[key][status_code] += 1
-            
+
             # Latency tracking
             tracker = self._latency_trackers[key]
             tracker.add(duration_ms)
             self._global_latency.add(duration_ms)
-            
+
             # Error tracking
             if status_code >= 400:
                 self.error_counts[key] += 1
-            
+
             # Update endpoint metrics
             metrics = self.endpoint_metrics[key]
             metrics["total_requests"] += 1
-            
+
             if status_code < 400:
                 metrics["success_count"] += 1
             else:
                 metrics["error_count"] += 1
-            
+
             # Calculate stats
             metrics["avg_response_time"] = tracker.mean()
 
@@ -191,6 +209,24 @@ class PulseMetrics:
                 metrics["p95_response_time"] = p95
             if p99 is not None:
                 metrics["p99_response_time"] = p99
+
+    def _evict_endpoint(self, key: str) -> None:
+        """Evict an endpoint from all metrics storage (called with lock held)."""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Remove from all storage structures
+        self.request_counts.pop(key, None)
+        self.error_counts.pop(key, None)
+        self.status_codes.pop(key, None)
+        self.endpoint_metrics.pop(key, None)
+        self._latency_trackers.pop(key, None)
+        self._endpoint_access_times.pop(key, None)
+
+        logger.info(
+            "Evicted endpoint metrics due to max_endpoints limit",
+            extra={"endpoint": key, "max_endpoints": self.max_endpoints}
+        )
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics."""
