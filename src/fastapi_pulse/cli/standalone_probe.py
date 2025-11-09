@@ -216,6 +216,11 @@ class StandaloneProbeClient:
                     checked_at=time.time(),
                 )
 
+    async def probe_endpoint(self, endpoint_meta: Dict[str, Any]) -> EndpointProbeResult:
+        """Convenience helper for probing a single endpoint without manual clients."""
+        async with self._create_client() as client:
+            return await self._probe_single_endpoint(client, endpoint_meta)
+
     @staticmethod
     def _format_path(path: str, path_params: Dict[str, Any]) -> str:
         """Replace path parameters with actual values.

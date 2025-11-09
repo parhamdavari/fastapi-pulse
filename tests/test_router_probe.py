@@ -233,3 +233,16 @@ def test_probe_start_returns_500_when_job_id_missing(client: TestClient):
         assert response.json()["detail"] == "Failed to start probe job"
     finally:
         manager.start_probe = original_start
+
+
+def test_endpoints_require_input_summary_counts(monkeypatch, client: TestClient):
+    """Ensure requires_input counter increments when no payload can be built."""
+    monkeypatch.setattr(
+        "fastapi_pulse.router.SamplePayloadBuilder.build",
+        lambda self, endpoint: None,
+        raising=False,
+    )
+    response = client.get("/health/pulse/endpoints")
+    assert response.status_code == 200
+    summary = response.json()["summary"]
+    assert summary["requires_input"] >= 1

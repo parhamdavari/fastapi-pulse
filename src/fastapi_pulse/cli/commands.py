@@ -428,4 +428,15 @@ def _merge_config(
     return merged
 
 
+def _await_if_needed(value):
+    """Execute callables/coroutines and return their result."""
+    if asyncio.iscoroutine(value):
+        return asyncio.run(value)
+    if inspect.iscoroutinefunction(value):
+        return asyncio.run(value())
+    if callable(value):
+        return value()
+    return value
+
+
 __all__ = ["check"]

@@ -47,6 +47,48 @@ dev = [
     "uvicorn",
 ]
 
+[tool.poetry]
+name = "fastapi-pulse"
+version = "0.2.0"
+description = "Check your FastAPI's pulse with one line of code. Instant health monitoring and dashboard."
+authors = ["Parham Davari <parham.davarii@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+packages = [{ include = "fastapi_pulse", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<4.0"
+fastapi = ">=0.118,<0.119"
+tdigest = ">=0.5.2"
+httpx = ">=0.23.0"
+click = ">=8.1.0"
+rich = { version = ">=13.0.0", optional = true }
+pyyaml = { version = ">=6.0.0", optional = true }
+
+[tool.poetry.extras]
+cli = ["click", "rich", "pyyaml"]
+
+[tool.poetry.group.test]
+optional = true
+
+[tool.poetry.group.test.dependencies]
+pytest = ">=7.0.0"
+pytest-cov = ">=4.0.0"
+pytest-asyncio = ">=0.18.0"
+httpx = ">=0.23.0"
+numpy = ">=1.20.0"
+rich = ">=13.0.0"
+pyyaml = ">=6.0.0"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+uvicorn = "*"
+
+[tool.poetry.scripts]
+pulse-cli = "fastapi_pulse.cli:main"
+
 [tool.pytest.ini_options]
 testpaths = [
     "tests",

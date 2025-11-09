@@ -270,6 +270,26 @@ def test_value_from_schema_handles_enum_and_depth_limits():
     assert builder._value_from_schema({"type": "string"}, depth=9) == "sample"
 
 
+def test_resolve_ref_handles_non_dict_node():
+    """_resolve_ref should return {} when path traverses non-dict structures."""
+    schema = {"components": ["invalid"]}
+    builder = SamplePayloadBuilder(schema)
+    resolved = builder._resolve_ref("#/components/schemas/User")
+    assert resolved == {}
+
+
+def test_value_from_schema_prefers_example_without_default():
+    """Ensure example values are used when provided."""
+    builder = SamplePayloadBuilder({})
+    assert builder._value_from_schema({"example": {"foo": "bar"}}) == {"foo": "bar"}
+
+
+def test_value_from_schema_returns_sample_for_unknown_type():
+    """Schemas with unknown types should fall back to 'sample'."""
+    builder = SamplePayloadBuilder({})
+    assert builder._value_from_schema({"type": "mystery"}) == "sample"
+
+
 def test_value_from_schema_with_ref():
     """Test _value_from_schema resolves $ref."""
     schema = {

@@ -252,3 +252,137 @@ def test_run_watch_mode_one_iteration(monkeypatch):
             fail_on_error=False,
         )
     assert calls == ["run"]
+
+
+def test_load_config_pyyaml_not_installed(monkeypatch, capsys, tmp_path):
+    """Test config loading when PyYAML is not installed."""
+    cfg = tmp_path / "pulse.yaml"
+    cfg.write_text("base_url: http://test\n")
+
+    # Mock import to raise ImportError
+    def mock_import(name, *args, **kwargs):
+        if name == "yaml":
+            raise ImportError("No module named 'yaml'")
+        return __builtins__.__import__(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", mock_import)
+
+    data = commands._load_config(cfg)
+    captured = capsys.readouterr()
+    assert data == {}
+    assert "PyYAML not installed" in captured.err
+
+
+def test_load_asgi_app_exception_handling():
+    """Test ASGI app loading exception handling."""
+    from fastapi_pulse.cli.commands import _load_asgi_app
+
+    with pytest.raises(ValueError):
+        _load_asgi_app("invalid.module.format.extra")
+
+
+@pytest.mark.asyncio
+async def test_run_probe_with_missing_endpoints(monkeypatch, capsys):
+    """Test probe run with missing endpoint warnings."""
+    class StubClient:
+        def __init__(self, **_):
+            pass
+
+        async def fetch_endpoints(self):
+            return [
+                {
+                    "id": "GET /existing",
+                    "method": "GET",
+                    "path": "/existing",
+                    "payload": {"effective": {"path_params": {}, "headers": {}, "query": {}, "body": None}},
+                }
+            ]
+
+        async def probe_endpoints(self, endpoints):
+            return [
+                EndpointProbeResult(
+                    endpoint_id="GET /existing",
+                    method="GET",
+                    path="/existing",
+                    status="healthy",
+                    status_code=200,
+                    latency_ms=10.0,
+                )
+            ]
+
+    monkeypatch.setattr(commands, "StandaloneProbeClient", StubClient)
+
+    exit_code = await commands._run_probe(
+        base_url="http://test",
+        timeout=1.0,
+        headers={},
+        concurrency=1,
+        specific_endpoints=["GET /existing", "GET /missing"],  # Include missing endpoint
+        output_format="json",
+        fail_on_error=False,
+    )
+
+    captured = capsys.readouterr()
+    assert "Endpoints not found: GET /missing" in captured.err
+    assert exit_code == 0  # Should still succeed
+
+
+@pytest.mark.asyncio
+async def test_run_probe_no_endpoints_to_check(monkeypatch, capsys):
+    """Test probe run with no endpoints to check."""
+    class EmptyClient:
+        def __init__(self, **_):
+            pass
+
+        async def fetch_endpoints(self):
+            return []
+
+    monkeypatch.setattr(commands, "StandaloneProbeClient", EmptyClient)
+    exit_code = await commands._run_probe(
+        base_url="http://test",
+        timeout=1.0,
+        headers={},
+        concurrency=1,
+        specific_endpoints=[],  # No endpoints specified
+        output_format="json",
+        fail_on_error=False,
+    )
+
+    captured = capsys.readouterr()
+    assert "No endpoints to check" in captured.err
+    assert exit_code == 1
+
+
+def test_await_if_needed_coroutine_object():
+    """Test await_if_needed with coroutine object."""
+    async def async_func():
+        return "result"
+
+    coro = async_func()
+    result = commands._await_if_needed(coro)
+    assert result == "result"
+
+
+def test_await_if_needed_regular_function():
+    """Test await_if_needed with regular function."""
+    def regular_func():
+        return "result"
+
+    result = commands._await_if_needed(regular_func)
+    assert result == "result"
+
+
+def test_await_if_needed_coroutine_function():
+    """Test await_if_needed with coroutine function."""
+    async def async_func():
+        return "result"
+
+    result = commands._await_if_needed(async_func)
+    assert result == "result"
+
+
+def test_await_if_needed_non_callable():
+    """Test await_if_needed with non-callable object."""
+    obj = "not callable"
+    result = commands._await_if_needed(obj)
+    assert result == "not callable"

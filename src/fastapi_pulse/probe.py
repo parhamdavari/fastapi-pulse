@@ -90,7 +90,8 @@ class PulseProbeManager:
         self.metrics = metrics
         self.registry = registry
         self.payload_store = payload_store
-        self.semaphore = asyncio.Semaphore(max(1, concurrency))
+        self._semaphore_limit = max(1, concurrency)
+        self._semaphore: Optional[asyncio.Semaphore] = None
         self.request_timeout = request_timeout
         self.min_probe_interval = min_probe_interval
         self.max_concurrent_jobs = max_concurrent_jobs
@@ -219,7 +220,7 @@ class PulseProbeManager:
         client: httpx.AsyncClient,
         endpoint: EndpointInfo,
     ) -> None:
-        async with self.semaphore:
+        async with self._get_semaphore():
             result = job.results[endpoint.id]
 
             payload = self._prepare_payload(endpoint)
@@ -318,6 +319,11 @@ class PulseProbeManager:
                 return None
         generated["source"] = "generated"
         return generated
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(self._semaphore_limit)
+        return self._semaphore
 
     @staticmethod
     def _format_path(path: str, path_params: Dict[str, Any]) -> str:
