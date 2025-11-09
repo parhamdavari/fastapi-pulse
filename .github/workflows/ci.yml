@@ -39,7 +39,7 @@ jobs:
     - name: Install core dependencies
       run: |
         # Install main dependencies
-        pip install fastapi "httpx>=0.23.0"
+        pip install fastapi "httpx>=0.23.0" click numpy
 
         # Install tdigest with fallback
         echo "Attempting to install tdigest..."
