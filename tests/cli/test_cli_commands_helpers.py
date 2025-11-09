@@ -103,7 +103,7 @@ def test_load_asgi_app_variants(monkeypatch):
 
     module.factory = factory
     module.async_factory = async_factory
-    sys.modules["tests.sample_asgi"] = module
+    monkeypatch.setitem(sys.modules, "tests.sample_asgi", module)
 
     assert isinstance(commands._load_asgi_app("tests.sample_asgi:app"), DummyApp)
     assert isinstance(commands._load_asgi_app("tests.sample_asgi:factory"), DummyApp)
