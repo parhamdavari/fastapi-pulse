@@ -108,30 +108,54 @@ class PulseMiddleware:
             final_status = status_code if not request_failed else 500
 
             if track_metrics:
-                self.metrics.record_request(
-                    endpoint=endpoint_path,
-                    method=method,
-                    status_code=final_status,
-                    duration_ms=duration_ms,
-                    correlation_id=correlation_id,
-                )
-
-                if self.enable_detailed_logging and (
-                    duration_ms > SLOW_REQUEST_THRESHOLD_MS or final_status >= 400
-                ):
-                    self._log_performance_alert(
+                # Never let metrics collection crash user requests
+                try:
+                    self.metrics.record_request(
+                        endpoint=endpoint_path,
                         method=method,
-                        path=endpoint_path,
                         status_code=final_status,
                         duration_ms=duration_ms,
                         correlation_id=correlation_id,
                     )
+                except Exception as e:
+                    logger.exception(
+                        "Failed to record metrics (non-fatal)",
+                        extra={
+                            "error": str(e),
+                            "endpoint": endpoint_path,
+                            "method": method,
+                            "correlation_id": correlation_id
+                        }
+                    )
 
-                self._check_sla_violation(
-                    method=method,
-                    endpoint_path=endpoint_path,
-                    correlation_id=correlation_id,
-                )
+                if self.enable_detailed_logging and (
+                    duration_ms > SLOW_REQUEST_THRESHOLD_MS or final_status >= 400
+                ):
+                    try:
+                        self._log_performance_alert(
+                            method=method,
+                            path=endpoint_path,
+                            status_code=final_status,
+                            duration_ms=duration_ms,
+                            correlation_id=correlation_id,
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            "Failed to log performance alert (non-fatal)",
+                            extra={"error": str(e), "correlation_id": correlation_id}
+                        )
+
+                try:
+                    self._check_sla_violation(
+                        method=method,
+                        endpoint_path=endpoint_path,
+                        correlation_id=correlation_id,
+                    )
+                except Exception as e:
+                    logger.exception(
+                        "Failed to check SLA violation (non-fatal)",
+                        extra={"error": str(e), "correlation_id": correlation_id}
+                    )
     
     def _normalize_path(self, path: str) -> str:
         """Normalize path for metrics grouping."""

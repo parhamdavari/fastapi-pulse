@@ -82,6 +82,9 @@ class PulseProbeManager:
         payload_store: PulsePayloadStore,
         concurrency: int = 10,
         request_timeout: float = 10.0,
+        min_probe_interval: float = 30.0,
+        max_concurrent_jobs: int = 3,
+        job_timeout: float = 600.0,
     ) -> None:
         self.app = app
         self.metrics = metrics
@@ -89,11 +92,36 @@ class PulseProbeManager:
         self.payload_store = payload_store
         self.semaphore = asyncio.Semaphore(max(1, concurrency))
         self.request_timeout = request_timeout
+        self.min_probe_interval = min_probe_interval
+        self.max_concurrent_jobs = max_concurrent_jobs
+        self.job_timeout = job_timeout
         self._jobs: Dict[str, ProbeJob] = {}
         self._last_job_id: Optional[str] = None
+        self._last_probe_time: Optional[float] = None
 
     def start_probe(self, endpoints: List[EndpointInfo]) -> str:
         """Start a probe job for the provided endpoints and return its identifier."""
+        # Check cooldown period
+        now = time.time()
+        if self._last_probe_time is not None:
+            time_since_last = now - self._last_probe_time
+            if time_since_last < self.min_probe_interval:
+                raise RuntimeError(
+                    f"Probe cooldown active. Please wait {self.min_probe_interval - time_since_last:.1f}s "
+                    f"before starting another probe (minimum interval: {self.min_probe_interval}s)"
+                )
+
+        # Check concurrent job limit
+        running_jobs = sum(1 for job in self._jobs.values() if job.status in ("queued", "running"))
+        if running_jobs >= self.max_concurrent_jobs:
+            raise RuntimeError(
+                f"Too many concurrent probe jobs ({running_jobs}/{self.max_concurrent_jobs}). "
+                "Wait for existing jobs to complete."
+            )
+
+        # Update last probe time
+        self._last_probe_time = now
+
         loop = asyncio.get_running_loop()
         job_id = uuid.uuid4().hex
         job = ProbeJob(job_id=job_id)
@@ -134,17 +162,42 @@ class PulseProbeManager:
         job.status = "running"
         job.started_at = time.time()
 
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://pulse-probe") as client:
-            tasks = [
-                self._probe_endpoint(job, client, endpoint)
-                for endpoint in endpoints
-            ]
-            await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            # Add overall job timeout to prevent hanging
+            async with asyncio.timeout(self.job_timeout):
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://pulse-probe") as client:
+                    tasks = [
+                        self._probe_endpoint(job, client, endpoint)
+                        for endpoint in endpoints
+                    ]
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
-        job.status = "completed"
-        job.completed_at = time.time()
-        if job._future and not job._future.done():
-            job._future.set_result(job)
+            job.status = "completed"
+        except asyncio.TimeoutError:
+            job.status = "timeout"
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(
+                "Probe job timed out",
+                extra={
+                    "job_id": job.job_id,
+                    "timeout_seconds": self.job_timeout,
+                    "total_targets": job.total_targets,
+                    "completed": job.completed
+                }
+            )
+        except Exception as e:
+            job.status = "failed"
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(
+                "Probe job failed with unexpected error",
+                extra={"job_id": job.job_id, "error": str(e)}
+            )
+        finally:
+            job.completed_at = time.time()
+            if job._future and not job._future.done():
+                job._future.set_result(job)
 
     async def _probe_endpoint(
         self,

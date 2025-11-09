@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 
 from .constants import (
@@ -31,6 +31,12 @@ class PayloadUpdate(BaseModel):
     headers: Dict[str, Any] = {}
     body: Optional[Any] = None
     media_type: Optional[str] = None
+
+
+class ProbeStartResponse(BaseModel):
+    """Response model for probe start endpoint."""
+    job_id: str
+    total: int
 
 
 def _get_registry(request: Request) -> PulseEndpointRegistry:
@@ -228,8 +234,8 @@ def create_pulse_router(metrics: PulseMetrics) -> APIRouter:
 
         return response
 
-    @router.post("/pulse/probe")
-    async def trigger_probe(request: Request, payload: Optional[ProbeRequest] = None):
+    @router.post("/pulse/probe", response_model=ProbeStartResponse)
+    async def trigger_probe(request: Request, payload: Optional[ProbeRequest] = Body(None)):
         registry = _get_registry(request)
         manager = _get_probe_manager(request)
 
@@ -244,8 +250,15 @@ def create_pulse_router(metrics: PulseMetrics) -> APIRouter:
             targets = registry.list_endpoints()
 
         job_id = manager.start_probe(targets)
+
+        # Defensive check: ensure job_id is valid
+        if job_id is None:
+            raise HTTPException(status_code=500, detail="Failed to start probe job")
+
         job = manager.get_job(job_id)
-        return {"job_id": job_id, "total": job.total_targets if job else len(targets)}
+        total = job.total_targets if job else len(targets)
+
+        return ProbeStartResponse(job_id=job_id, total=total)
 
     @router.get("/pulse/probe/{job_id}")
     def probe_status(request: Request, job_id: str):

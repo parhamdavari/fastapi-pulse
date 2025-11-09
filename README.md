@@ -62,6 +62,7 @@ add_pulse(
     dashboard_path="/pulse",          # move the UI
     enable_detailed_logging=False,    # quiet production logs
     payload_config_path="pulse_probes.json",  # persist probe payloads
+    cors_allowed_origins=["https://yourdomain.com"],  # configure CORS (secure)
 )
 ```
 
@@ -70,8 +71,31 @@ Prefer a custom metrics window?
 ```python
 from fastapi_pulse import PulseMetrics
 
-metrics = PulseMetrics(window_seconds=600)
+metrics = PulseMetrics(
+    window_seconds=600,
+    max_endpoints=500  # prevent memory leaks in high-cardinality scenarios
+)
 add_pulse(app, metrics=metrics)
+```
+
+## Security & Production Best Practices
+
+**v0.2.1+ includes critical security fixes. Please review [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md)**
+
+- Configure CORS origins explicitly (no more wildcards!)
+- Payload validation prevents disk exhaustion
+- Bounded memory with LRU eviction
+- Rate limiting on health probes
+- Error recovery ensures metrics never crash requests
+
+```python
+# Secure production configuration
+add_pulse(
+    app,
+    enable_cors=True,
+    cors_allowed_origins=["https://your-frontend.com"],  # explicit origins
+    metrics=PulseMetrics(max_endpoints=1000),  # memory bounds
+)
 ```
 
 ---

@@ -12,8 +12,9 @@ __version__ = "0.2.0"
 
 import importlib.resources
 import logging
+import os
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, List, Optional, Union
 
 from fastapi import FastAPI
 from starlette.staticfiles import StaticFiles
@@ -40,6 +41,7 @@ def add_pulse(
     enable_detailed_logging: bool = True,
     dashboard_path: str = "/pulse",
     enable_cors: bool = True,
+    cors_allowed_origins: Optional[List[str]] = None,
     metrics: Optional[PulseMetrics] = None,
     metrics_factory: Optional[Callable[[], PulseMetrics]] = None,
     payload_config_path: Optional[Union[Path, str]] = None,
@@ -52,6 +54,9 @@ def add_pulse(
         enable_detailed_logging: If True, logs slow requests and errors.
         dashboard_path: The path where the pulse dashboard will be served.
         enable_cors: If True, adds CORS middleware for dashboard access.
+        cors_allowed_origins: List of allowed origins for CORS. If None, reads from
+            PULSE_ALLOWED_ORIGINS environment variable (comma-separated).
+            Defaults to ["http://localhost:3000"] for safety.
     """
     if metrics is not None and metrics_factory is not None:
         raise ValueError("Provide either 'metrics' or 'metrics_factory', not both.")
@@ -64,12 +69,29 @@ def add_pulse(
 
     # 1. Add CORS middleware if enabled (for dashboard functionality)
     if enable_cors:
+        # Determine allowed origins with security-first defaults
+        if cors_allowed_origins is not None:
+            allowed_origins = cors_allowed_origins
+        else:
+            # Try to read from environment variable
+            env_origins = os.getenv("PULSE_ALLOWED_ORIGINS", "").strip()
+            if env_origins:
+                allowed_origins = [origin.strip() for origin in env_origins.split(",")]
+            else:
+                # Safe default for local development
+                allowed_origins = ["http://localhost:3000"]
+                logger.warning(
+                    "CORS enabled without explicit origins. Using safe default: ['http://localhost:3000']. "
+                    "Set PULSE_ALLOWED_ORIGINS environment variable or pass cors_allowed_origins parameter "
+                    "to allow other origins."
+                )
+
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # In production, specify your domain
-            allow_credentials=True,
+            allow_origins=allowed_origins,
+            allow_credentials=False,  # Safer default - enable only if needed
             allow_methods=["GET", "POST", "PUT", "DELETE"],
-            allow_headers=["*"],
+            allow_headers=["Content-Type", "X-Correlation-ID", "X-Pulse-Probe"],
         )
 
     # 2. Store pulse collector on application state for reuse
