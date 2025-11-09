@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
 from fastapi import FastAPI
@@ -18,18 +18,18 @@ class EndpointInfo:
     """Metadata describing an API endpoint derived from OpenAPI schema."""
 
     id: str
-    method: str
-    path: str
-    summary: Optional[str]
-    tags: List[str]
-    requires_input: bool
-    has_path_params: bool
-    has_request_body: bool
-    path_parameters: List[Dict[str, Any]]
-    query_parameters: List[Dict[str, Any]]
-    header_parameters: List[Dict[str, Any]]
-    request_body_media_type: Optional[str]
-    request_body_schema: Optional[Dict[str, Any]]
+    method: str = "GET"
+    path: str = "/"
+    summary: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
+    requires_input: bool = False
+    has_path_params: bool = False
+    has_request_body: bool = False
+    path_parameters: List[Dict[str, Any]] = field(default_factory=list)
+    query_parameters: List[Dict[str, Any]] = field(default_factory=list)
+    header_parameters: List[Dict[str, Any]] = field(default_factory=list)
+    request_body_media_type: Optional[str] = None
+    request_body_schema: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, object]:
         """Serialize endpoint info for JSON responses."""
