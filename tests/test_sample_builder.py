@@ -15,16 +15,19 @@ def test_build_with_path_parameters():
     builder = SamplePayloadBuilder(schema)
 
     endpoint = EndpointInfo(
+        id="GET /users/{id}",
         method="GET",
         path="/users/{id}",
         summary="Get user",
         tags=[],
+        requires_input=False,
+        has_path_params=True,
+        has_request_body=False,
         path_parameters=[{"name": "id", "schema": {"type": "integer"}}],
         query_parameters=[],
         header_parameters=[],
         request_body_schema=None,
-        request_body_media_type=None,
-        requires_input=False
+        request_body_media_type=None
     )
 
     payload = builder.build(endpoint)
@@ -38,10 +41,14 @@ def test_build_with_query_parameters():
     builder = SamplePayloadBuilder(schema)
 
     endpoint = EndpointInfo(
+        id="GET /search",
         method="GET",
         path="/search",
         summary="Search",
         tags=[],
+        requires_input=False,
+        has_path_params=False,
+        has_request_body=False,
         path_parameters=[],
         query_parameters=[
             {"name": "q", "schema": {"type": "string"}},
@@ -49,8 +56,7 @@ def test_build_with_query_parameters():
         ],
         header_parameters=[],
         request_body_schema=None,
-        request_body_media_type=None,
-        requires_input=False
+        request_body_media_type=None
     )
 
     payload = builder.build(endpoint)
@@ -65,18 +71,21 @@ def test_build_with_headers():
     builder = SamplePayloadBuilder(schema)
 
     endpoint = EndpointInfo(
+        id="GET /api/data",
         method="GET",
         path="/api/data",
         summary="Get data",
         tags=[],
+        requires_input=False,
+        has_path_params=False,
+        has_request_body=False,
         path_parameters=[],
         query_parameters=[],
         header_parameters=[
             {"name": "X-API-Key", "schema": {"type": "string"}}
         ],
         request_body_schema=None,
-        request_body_media_type=None,
-        requires_input=False
+        request_body_media_type=None
     )
 
     payload = builder.build(endpoint)
@@ -90,10 +99,14 @@ def test_build_with_request_body():
     builder = SamplePayloadBuilder(schema)
 
     endpoint = EndpointInfo(
+        id="POST /users",
         method="POST",
         path="/users",
         summary="Create user",
         tags=[],
+        requires_input=False,
+        has_path_params=False,
+        has_request_body=True,
         path_parameters=[],
         query_parameters=[],
         header_parameters=[],
@@ -104,8 +117,7 @@ def test_build_with_request_body():
                 "age": {"type": "integer"}
             }
         },
-        request_body_media_type="application/json",
-        requires_input=False
+        request_body_media_type="application/json"
     )
 
     payload = builder.build(endpoint)
