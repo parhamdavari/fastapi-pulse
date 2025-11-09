@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 
 from .constants import (
@@ -229,7 +229,7 @@ def create_pulse_router(metrics: PulseMetrics) -> APIRouter:
         return response
 
     @router.post("/pulse/probe")
-    async def trigger_probe(request: Request, payload: Optional[ProbeRequest] = None):
+    async def trigger_probe(request: Request, payload: Optional[ProbeRequest] = Body(None)):
         registry = _get_registry(request)
         manager = _get_probe_manager(request)
 
