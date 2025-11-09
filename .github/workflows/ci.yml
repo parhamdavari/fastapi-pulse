@@ -165,6 +165,10 @@ jobs:
           echo "❌ Tests failed"
           exit 1
         fi
+        if [ "${{ needs['lint-and-security'].result }}" != "success" ]; then
+          echo "❌ Lint and security checks failed"
+          exit 1
+        fi
         echo "✅ All CI checks passed!"
         echo "✅ Python 3.10, 3.11, 3.12 tests passed"
         echo "✅ Code quality checks completed"
