@@ -146,3 +146,4 @@ pulse_probes.json
 # Markdown files (except README.md)
 *.md
 !README.md
+!blueprint-test.md
