@@ -39,8 +39,13 @@ cli = [
 test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",      # For measuring coverage
-    "pytest-asyncio>=0.18.0", # For handling async test functions
+    "pytest-asyncio>=0.21.0", # For handling async test functions
+    "pytest-mock>=3.10.0",    # For mocking in tests
+    "pytest-xdist>=3.0.0",    # For parallel test execution
     "httpx>=0.23.0",          # The modern async HTTP client for testing
+    "asgi-lifespan>=2.0.0",   # For managing ASGI app lifecycle in tests
+    "hypothesis>=6.70.0",     # For property-based testing
+    "freezegun>=1.2.0",       # For mocking time in tests
     "numpy>=1.20.0",          # For calculating trusted percentile values in tests
 ]
 dev = [
@@ -93,6 +98,23 @@ pulse-cli = "fastapi_pulse.cli:main"
 testpaths = [
     "tests",
 ]
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests with no external dependencies",
+    "integration: Integration tests with real FastAPI app",
+    "api: API endpoint tests",
+    "property: Property-based tests with Hypothesis",
+]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+]
+
+[tool.hypothesis]
+derandomize = true
+max_examples = 100
+verbosity = "normal"
 
 [tool.setuptools]
 include-package-data = true
@@ -104,5 +126,14 @@ where = ["src"]
 source = ["fastapi_pulse"]
 
 [tool.coverage.report]
-fail_under = 90
+fail_under = 95
 show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "pass",
+]
