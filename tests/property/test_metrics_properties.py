@@ -366,3 +366,79 @@ class TestPayloadSanitizationProperties:
 
         assert result["path_params"] == path_params
         assert result["query"] == query
+
+@st.composite
+def edge_case_endpoint_path(draw):
+    """Generate edge case endpoint paths."""
+    return draw(st.one_of(
+        st.just(""),  # Empty
+        st.just("/"),  # Root
+        st.just("/" * 100),  # Many slashes
+        st.text(min_size=0, max_size=1000),  # Very long
+        st.text(alphabet=st.characters(
+            blacklist_categories=('Cs',),  # No surrogates
+            blacklist_characters='\x00'  # No null bytes
+        ), min_size=0, max_size=100),  # Unicode
+    ))
+
+
+class TestEdgeCaseProperties:
+    """Property-based tests for edge cases."""
+
+    @given(
+        endpoint=edge_case_endpoint_path(),
+        method=valid_http_method(),
+        status_code=valid_status_code(),
+        duration=valid_duration_ms(),
+    )
+    @settings(max_examples=50)
+    def test_metrics_handles_edge_case_paths(
+        self, endpoint, method, status_code, duration
+    ):
+        """Metrics should handle edge case paths without crashing."""
+        metrics = PulseMetrics()
+
+        # Should not raise
+        metrics.record_request(endpoint, method, status_code, duration)
+
+        result = metrics.get_metrics()
+        assert result["summary"]["total_requests"] == 1
+
+    @given(
+        values=st.lists(valid_duration_ms(), min_size=0, max_size=10),
+    )
+    @settings(max_examples=30)
+    def test_rolling_digest_handles_empty_list(self, values):
+        """RollingWindowDigest should handle empty value lists."""
+        digest = RollingWindowDigest(window_seconds=300, bucket_seconds=60)
+
+        for val in values:
+            digest.add(val)
+
+        # Should not crash
+        count = digest.count()
+        total = digest.total()
+        mean = digest.mean()
+
+        assert count == len(values)
+        if values:
+            assert total > 0 or all(v == 0 for v in values)
+        else:
+            assert total == 0.0
+            assert mean == 0.0
+
+    @given(
+        endpoint=st.text(min_size=0, max_size=200),
+        method=st.text(alphabet=st.characters(whitelist_categories=('Lu',)), min_size=1, max_size=10),
+        count=st.integers(min_value=1, max_value=100),
+    )
+    @settings(max_examples=30)
+    def test_repeated_requests_accumulate(self, endpoint, method, count):
+        """Repeated identical requests should accumulate correctly."""
+        metrics = PulseMetrics()
+
+        for _ in range(count):
+            metrics.record_request(endpoint, method, 200, 50.0)
+
+        result = metrics.get_metrics()
+        assert result["summary"]["total_requests"] == count

@@ -448,3 +448,100 @@ class TestPulseMiddleware:
         headers = dict(start_msg["headers"])
         assert headers[b"content-type"] == b"application/json"
         assert b"Internal Server Error" in body_msg["body"]
+
+    async def test_empty_path(self, middleware, mock_metrics):
+        """Middleware should handle empty path."""
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "",
+            "headers": [],
+        }
+
+        receive = AsyncMock()
+        send = AsyncMock()
+
+        await middleware(scope, receive, send)
+
+        # Should still record metrics
+        mock_metrics.record_request.assert_called_once()
+
+    async def test_missing_method(self, mock_app, mock_metrics):
+        """Middleware should handle missing method gracefully."""
+        middleware = PulseMiddleware(
+            mock_app,
+            metrics=mock_metrics,
+            enable_detailed_logging=False,
+        )
+
+        scope = {
+            "type": "http",
+            # Missing "method"
+            "path": "/test",
+            "headers": [],
+        }
+
+        receive = AsyncMock()
+        send = AsyncMock()
+
+        await middleware(scope, receive, send)
+
+        # Should use default method
+        call_args = mock_metrics.record_request.call_args
+        assert call_args.kwargs["method"] == "GET"
+
+    async def test_malformed_headers(self, middleware, mock_metrics):
+        """Middleware should handle malformed headers."""
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/test",
+            "headers": [
+                (b"x-test", b"value"),
+            ],
+        }
+
+        receive = AsyncMock()
+        send = AsyncMock()
+
+        # Should not crash
+        await middleware(scope, receive, send)
+
+    def test_normalize_path_empty_string(self, middleware):
+        """_normalize_path should handle empty string."""
+        result = middleware._normalize_path("")
+        assert result == ""
+
+    def test_normalize_path_root(self, middleware):
+        """_normalize_path should handle root path."""
+        result = middleware._normalize_path("/")
+        assert result == "/"
+
+    def test_normalize_path_multiple_ids(self, middleware):
+        """_normalize_path should replace multiple numeric IDs."""
+        result = middleware._normalize_path("/users/123/posts/456/comments/789")
+        assert result == "/users/{id}/posts/{id}/comments/{id}"
+
+    def test_should_skip_exact_match(self, mock_app, mock_metrics):
+        """_should_skip_tracking should match exact paths."""
+        middleware = PulseMiddleware(
+            mock_app,
+            metrics=mock_metrics,
+            exclude_path_prefixes=("/exact",),
+        )
+
+        assert middleware._should_skip_tracking("/exact") is True
+        assert middleware._should_skip_tracking("/exact/sub") is True
+        assert middleware._should_skip_tracking("/exactnot") is False
+
+    def test_should_skip_root_special_case(self, mock_app, mock_metrics):
+        """_should_skip_tracking should handle root path specially."""
+        middleware = PulseMiddleware(
+            mock_app,
+            metrics=mock_metrics,
+            exclude_path_prefixes=("/",),
+        )
+
+        assert middleware._should_skip_tracking("/") is True
+        # Root exclusion should not exclude all paths
+        assert middleware._should_skip_tracking("/api") is False

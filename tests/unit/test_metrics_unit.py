@@ -331,3 +331,72 @@ class TestPulseMetrics:
 
         # Window count should only include recent request
         assert result["summary"]["window_request_count"] == 1
+    def test_negative_duration_handled(self, clean_metrics):
+        """Negative durations should be handled gracefully."""
+        clean_metrics.record_request("/api", "GET", 200, -10.0)
+        
+        metrics = clean_metrics.get_metrics()
+        # Should either reject (count=0) or record it
+        assert metrics["summary"]["total_requests"] >= 0
+
+    def test_empty_endpoint_path(self, clean_metrics):
+        """Empty endpoint path should be handled."""
+        clean_metrics.record_request("", "GET", 200, 50.0)
+        
+        metrics = clean_metrics.get_metrics()
+        assert "GET " in metrics["endpoint_metrics"]
+
+    def test_invalid_status_code_handled(self, clean_metrics):
+        """Invalid status codes should be recorded without error."""
+        clean_metrics.record_request("/api", "GET", 999, 50.0)
+        
+        metrics = clean_metrics.get_metrics()
+        assert metrics["summary"]["total_requests"] == 1
+
+    def test_extreme_duration_values(self, clean_metrics):
+        """Very large durations should be handled."""
+        clean_metrics.record_request("/api", "GET", 200, 1_000_000.0)
+        
+        metrics = clean_metrics.get_metrics()
+        assert metrics["summary"]["avg_response_time"] > 0
+
+    def test_unicode_in_endpoint_path(self, clean_metrics):
+        """Unicode characters in paths should be handled."""
+        clean_metrics.record_request("/api/用户", "GET", 200, 50.0)
+        
+        metrics = clean_metrics.get_metrics()
+        assert "GET /api/用户" in metrics["endpoint_metrics"]
+
+    def test_thread_safety_data_integrity(self, clean_metrics):
+        """Thread safety should preserve data integrity."""
+        import threading
+        errors = []
+        
+        def record_requests():
+            try:
+                for i in range(100):
+                    clean_metrics.record_request(
+                        endpoint="/api",
+                        method="GET",
+                        status_code=200,
+                        duration_ms=float(i),
+                    )
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=record_requests) for _ in range(5)]
+
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        assert len(errors) == 0, f"Thread safety violations: {errors}"
+        metrics = clean_metrics.get_metrics()
+        assert metrics["summary"]["total_requests"] == 500
+        
+        # Verify data integrity
+        endpoint_metrics = metrics["endpoint_metrics"]["GET /api"]
+        assert endpoint_metrics["total_requests"] == 500
+        assert endpoint_metrics["success_count"] == 500

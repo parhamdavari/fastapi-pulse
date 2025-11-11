@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 from pathlib import Path
 from typing import AsyncIterator, Iterator
@@ -11,6 +12,7 @@ import httpx
 import pytest
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
+from hypothesis import settings, Verbosity
 from pydantic import BaseModel
 
 from fastapi_pulse import add_pulse, PulseMetrics
@@ -20,6 +22,15 @@ from fastapi_pulse.constants import (
     PULSE_PROBE_MANAGER_KEY,
     PULSE_STATE_KEY,
 )
+
+
+# Configure Hypothesis for deterministic, reproducible tests
+settings.register_profile("ci", max_examples=100, derandomize=True, verbosity=Verbosity.verbose)
+settings.register_profile("dev", max_examples=10, derandomize=True)
+settings.register_profile("thorough", max_examples=1000, derandomize=True)
+
+# Load CI profile if in CI, else dev
+settings.load_profile("ci" if os.getenv("CI") else "dev")
 
 
 # Fixtures for isolation
@@ -221,11 +232,3 @@ def sample_openapi_schema() -> dict:
             }
         },
     }
-
-
-# Event loop configuration for pytest-asyncio
-
-@pytest.fixture(scope="session")
-def event_loop_policy():
-    """Set event loop policy for consistent async behavior."""
-    return asyncio.get_event_loop_policy()

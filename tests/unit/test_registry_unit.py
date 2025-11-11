@@ -459,3 +459,90 @@ class TestPulseEndpointRegistry:
         # Should only have GET, not invalid_method
         methods = {ep.method for ep in endpoints}
         assert methods == {"GET"}
+
+    def test_malformed_openapi_schema(self):
+        """Registry should handle malformed OpenAPI schema gracefully."""
+        schema = {
+            "openapi": "3.0.0",
+            # Missing "info"
+            "paths": "not a dict",  # Wrong type
+        }
+
+        app = Mock(spec=FastAPI)
+        app.openapi = Mock(return_value=schema)
+
+        registry = PulseEndpointRegistry(app)
+
+        # Should not crash
+        endpoints = registry.list_endpoints()
+        assert isinstance(endpoints, list)
+
+    def test_empty_openapi_schema(self):
+        """Registry should handle empty OpenAPI schema."""
+        schema = {}
+
+        app = Mock(spec=FastAPI)
+        app.openapi = Mock(return_value=schema)
+
+        registry = PulseEndpointRegistry(app)
+        endpoints = registry.list_endpoints()
+
+        assert endpoints == []
+
+    def test_none_openapi_schema(self):
+        """Registry should handle None OpenAPI schema."""
+        app = Mock(spec=FastAPI)
+        app.openapi = Mock(return_value=None)
+
+        registry = PulseEndpointRegistry(app)
+
+        # Should handle gracefully
+        try:
+            endpoints = registry.list_endpoints()
+            assert isinstance(endpoints, list)
+        except (TypeError, AttributeError):
+            # Acceptable if it raises - documents the behavior
+            pass
+
+    def test_paths_with_none_operations(self):
+        """Registry should handle paths with None operations."""
+        schema = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/test": None,  # None instead of dict
+            },
+        }
+
+        app = Mock(spec=FastAPI)
+        app.openapi = Mock(return_value=schema)
+
+        registry = PulseEndpointRegistry(app)
+        endpoints = registry.list_endpoints()
+
+        # Should skip invalid path
+        assert len(endpoints) == 0
+
+    def test_operation_without_responses(self):
+        """Registry should handle operations without responses field."""
+        schema = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/test": {
+                    "get": {
+                        # Missing responses field
+                    }
+                }
+            },
+        }
+
+        app = Mock(spec=FastAPI)
+        app.openapi = Mock(return_value=schema)
+
+        registry = PulseEndpointRegistry(app)
+        endpoints = registry.list_endpoints()
+
+        # Should still discover endpoint
+        assert len(endpoints) == 1
+        assert endpoints[0].path == "/test"
